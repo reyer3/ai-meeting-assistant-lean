@@ -14,10 +14,10 @@ from pathlib import Path
 import numpy as np
 from loguru import logger
 
-from audio.capture import SystemAudioCapture
-from audio.speaker_id import SpeakerIdentifier
-from ai.stt import WhisperSTT
-from ai.llm import LocalLLM
+from audio.system_capture import SystemAudioCapture, create_system_capture
+from audio.lean_speaker_id import SpeakerIdentifier, create_lean_speaker_id
+from ai.lean_stt import WhisperSTT, create_lean_stt
+from ai.lean_llm import LocalLLM, create_lean_llm
 from rag.query_engine import RAGQueryEngine
 
 
@@ -28,16 +28,17 @@ class ProcessingConfig:
     # Audio settings
     sample_rate: int = 16000
     buffer_duration: float = 2.0  # segundos de audio por chunk
-    voice_threshold: float = 0.7  # umbral de confianza para identificación
+    voice_threshold: float = 0.65  # umbral de confianza para identificación
     
     # AI settings  
     model_name: str = "qwen2.5:0.5b"  # Modelo pequeño sin GPU
-    max_context_length: int = 2048
+    stt_model: str = "base"  # Whisper base para balance velocidad/calidad
+    max_context_length: int = 1024
     temperature: float = 0.3  # Respuestas más determinísticas
     
     # RAG settings
-    max_rag_results: int = 3
-    similarity_threshold: float = 0.75
+    max_rag_results: int = 2  # Menos resultados = más rápido
+    similarity_threshold: float = 0.7
     
     # Performance
     processing_timeout: float = 6.0  # Max tiempo total por sugerencia
@@ -74,33 +75,43 @@ class LeanMeetingAssistant:
             
             # 1. Audio capture (crítico)
             logger.info("🎤 Configurando captura de audio del sistema...")
-            self.audio_capture = SystemAudioCapture(
+            self.audio_capture = create_system_capture(
                 sample_rate=self.config.sample_rate,
                 buffer_duration=self.config.buffer_duration
             )
             
             # 2. Speaker identification (crítico para diferenciación)
             logger.info("👤 Cargando perfil de voz personal...")
-            self.speaker_id = SpeakerIdentifier()
-            if not await self.speaker_id.load_user_profile(self.user_profile_path):
+            self.speaker_id = create_lean_speaker_id(self.user_profile_path)
+            if not await self.speaker_id.load_user_profile():
                 logger.error("❌ No se pudo cargar perfil de voz. Ejecuta setup_voice_profile.py")
                 return False
             
             # 3. STT local (crítico)
             logger.info("🗣️ Inicializando Whisper local...")
-            self.stt = WhisperSTT(model_size="base")  # Balance velocidad/calidad
+            self.stt = create_lean_stt(self.config.stt_model, "es")
+            if not await self.stt.initialize():
+                logger.error("❌ No se pudo inicializar Whisper")
+                return False
             
             # 4. LLM pequeño local (crítico) 
             logger.info("🧠 Conectando con modelo local...")
-            self.llm = LocalLLM(
-                model_name=self.config.model_name,
-                max_context_length=self.config.max_context_length,
-                temperature=self.config.temperature
-            )
+            self.llm = create_lean_llm(self.config.model_name)
+            
+            # Test de conexión LLM
+            llm_test = await self.llm.test_connection()
+            if not llm_test["success"]:
+                logger.error(f"❌ No se pudo conectar con LLM: {llm_test['error']}")
+                return False
             
             # 5. RAG engine (para contexto)
             logger.info("📚 Inicializando sistema RAG...")
-            self.rag = RAGQueryEngine()
+            try:
+                self.rag = RAGQueryEngine()
+            except Exception as e:
+                logger.warning(f"⚠️ RAG no disponible: {e}")
+                logger.info("💡 Ejecuta: python scripts/setup_knowledge_base.py")
+                self.rag = None  # Continuar sin RAG
             
             init_time = time.time() - start_time
             logger.success(f"✅ Inicialización completa en {init_time:.2f}s")
@@ -152,7 +163,7 @@ class LeanMeetingAssistant:
             
             else:
                 # Solo capturar contexto de otros hablantes (sin transcribir)
-                if speaker_info['confidence'] > 0.5:
+                if speaker_info.get('confidence', 0) > 0.5:
                     logger.debug("👥 Voz de otro participante detectada")
                     # Agregar info de contexto sin transcripción completa
                     self._add_context_marker("other_speaker_active")
@@ -177,13 +188,14 @@ class LeanMeetingAssistant:
                 self._add_to_conversation_buffer(user_speech, "user")
                 return
             
-            # 2. Query RAG para contexto similar
-            logger.debug("🔍 Buscando contexto en base de conocimiento...")
-            rag_context = await self.rag.query_similar_situations(
-                user_speech, 
-                max_results=self.config.max_rag_results,
-                threshold=self.config.similarity_threshold
-            )
+            # 2. Query RAG para contexto similar (si está disponible)
+            rag_context = []
+            if self.rag:
+                try:
+                    logger.debug("🔍 Buscando contexto en base de conocimiento...")
+                    rag_context = await self._query_rag_context(user_speech)
+                except Exception as e:
+                    logger.warning(f"⚠️ Error en RAG: {e}")
             
             # 3. Generar sugerencia AEIOU enriquecida
             logger.debug("💡 Generando sugerencia AEIOU...")
@@ -205,6 +217,42 @@ class LeanMeetingAssistant:
             
         except Exception as e:
             logger.error(f"❌ Error generando sugerencia: {e}")
+    
+    async def _query_rag_context(self, user_speech: str) -> List[Dict]:
+        """Query al sistema RAG para obtener contexto"""
+        if not self.rag:
+            return []
+        
+        try:
+            # Usar método simplificado si existe
+            if hasattr(self.rag, 'query_similar_situations'):
+                return await self.rag.query_similar_situations(
+                    user_speech,
+                    max_results=self.config.max_rag_results,
+                    threshold=self.config.similarity_threshold
+                )
+            else:
+                # Fallback para RAG estándar
+                results = self.rag.query(
+                    query=user_speech,
+                    n_results=self.config.max_rag_results
+                )
+                
+                # Convertir a formato esperado
+                context = []
+                if results and 'documents' in results:
+                    for i, doc in enumerate(results['documents'][0]):
+                        context.append({
+                            'text': doc,
+                            'effectiveness': 0.8,  # Default
+                            'metadata': results.get('metadatas', [[]])[0][i] if results.get('metadatas') else {}
+                        })
+                
+                return context
+                
+        except Exception as e:
+            logger.warning(f"⚠️ Error en query RAG: {e}")
+            return []
     
     async def _detect_suggestion_trigger(self, text: str) -> bool:
         """Detecta si el texto requiere una sugerencia AEIOU"""
@@ -241,18 +289,18 @@ class LeanMeetingAssistant:
         
         return trigger
     
-    async def _display_suggestion(self, suggestion: Dict[str, Any], rag_context: List[Dict]):
+    async def _display_suggestion(self, suggestion, rag_context: List[Dict]):
         """Muestra la sugerencia en overlay UI"""
         
         # Formato de salida para desarrollo lean (consola por ahora)
         print("\n" + "="*80)
         print("💡 SUGERENCIA AEIOU")
         print("="*80)
-        print(f"📝 {suggestion['response']}")
+        print(f"📝 {suggestion.text}")
         
         if rag_context:
             print(f"\n📊 Basado en {len(rag_context)} situaciones similares")
-            print(f"🎯 Efectividad promedio: {suggestion.get('confidence', 0.8):.0%}")
+            print(f"🎯 Confianza: {suggestion.confidence:.0%}")
         
         print("="*80 + "\n")
         
@@ -285,6 +333,9 @@ class LeanMeetingAssistant:
         if self.audio_capture:
             await self.audio_capture.stop()
         
+        if self.stt:
+            await self.stt.cleanup()
+        
         logger.info("🛑 Asistente detenido")
 
 
@@ -298,6 +349,7 @@ def create_lean_assistant(user_profile_path: str = "data/user_voice_profile.pkl"
         buffer_duration=2.0,
         voice_threshold=0.65,  # Un poco más permisivo para desarrollo
         model_name="qwen2.5:0.5b",
+        stt_model="base",  # Balance velocidad/calidad
         max_context_length=1024,  # Reducido para velocidad
         temperature=0.2,
         max_rag_results=2,  # Menos resultados = más rápido
