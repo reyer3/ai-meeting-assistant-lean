@@ -1,0 +1,126 @@
+{
+  "application": {
+    "name": "AI Collections Assistant",
+    "version": "1.0.0",
+    "mode": "collections",
+    "debug_mode": false
+  },
+  "audio": {
+    "sample_rate": 16000,
+    "chunk_size": 1024,
+    "channels": 1,
+    "buffer_duration": 2.0,
+    "device_name": null,
+    "noise_reduction": true,
+    "auto_gain_control": true
+  },
+  "voice_profile": {
+    "profile_path": "./data/voice_profiles",
+    "calibration_duration": 180,
+    "similarity_threshold": 0.85,
+    "update_frequency": 10,
+    "agent_identification": true
+  },
+  "rag": {
+    "embedding_model": "all-MiniLM-L6-v2",
+    "chroma_db_path": "./data/chroma_collections",
+    "max_query_results": 3,
+    "similarity_threshold": 0.7,
+    "auto_update_effectiveness": true,
+    "collections_specialization": true
+  },
+  "llm": {
+    "model_name": "qwen2.5:0.5b",
+    "temperature": 0.2,
+    "max_tokens": 200,
+    "timeout": 10,
+    "system_prompt": "You are an AI assistant specialized in debt collection. Provide empathetic but effective responses using the AEIOU framework. Always maintain compliance with FDCPA regulations."
+  },
+  "stt": {
+    "model_size": "small",
+    "language": "es",
+    "energy_threshold": 300,
+    "pause_threshold": 0.8,
+    "collections_vocabulary": true
+  },
+  "collections": {
+    "compliance_engine_enabled": true,
+    "real_time_monitoring": true,
+    "auto_escalation": true,
+    "payment_plan_suggestions": true,
+    "objection_detection": true,
+    "effectiveness_tracking": true,
+    "fdcpa_compliance": {
+      "enabled": true,
+      "jurisdiction": "USA",
+      "auto_block_violations": true,
+      "violation_logging": true
+    },
+    "call_limits": {
+      "max_contacts_per_week": 7,
+      "max_call_duration_minutes": 15,
+      "allowed_hours_start": "08:00",
+      "allowed_hours_end": "21:00"
+    },
+    "escalation_triggers": {
+      "debt_validation_request": true,
+      "hostile_language": true,
+      "legal_threats": true,
+      "multiple_broken_promises": 3
+    }
+  },
+  "ui": {
+    "overlay_position": "top-right",
+    "overlay_opacity": 0.9,
+    "suggestion_timeout": 10,
+    "theme": "professional",
+    "font_size": 12,
+    "collections_dashboard": true,
+    "compliance_alerts": true,
+    "real_time_metrics": true
+  },
+  "integrations": {
+    "crm_enabled": false,
+    "crm_type": null,
+    "crm_api_endpoint": null,
+    "dialer_integration": false,
+    "webhook_endpoints": [],
+    "export_formats": ["json", "csv", "pdf"]
+  },
+  "metrics": {
+    "track_recovery_rate": true,
+    "track_compliance_score": true,
+    "track_call_duration": true,
+    "track_objection_types": true,
+    "track_payment_plans": true,
+    "track_escalations": true,
+    "daily_reports": true,
+    "agent_scorecards": true
+  },
+  "features": {
+    "voice_recognition": true,
+    "real_time_suggestions": true,
+    "rag_contextual_search": true,
+    "compliance_monitoring": true,
+    "objection_handling": true,
+    "payment_plan_optimization": true,
+    "effectiveness_tracking": true,
+    "escalation_management": true,
+    "collections_reporting": true,
+    "agent_coaching": true
+  },
+  "security": {
+    "data_encryption": true,
+    "pii_protection": true,
+    "audit_logging": true,
+    "compliance_recording": true,
+    "secure_storage": true
+  },
+  "performance": {
+    "max_concurrent_calls": 10,
+    "cache_size_mb": 256,
+    "model_quantization": "int8",
+    "gpu_acceleration": false,
+    "batch_processing": false
+  }
+}
