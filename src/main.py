@@ -37,6 +37,11 @@ class LeanApp:
             level="INFO",
             format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | {message}"
         )
+        
+        # Crear directorio logs si no existe
+        logs_dir = Path("logs")
+        logs_dir.mkdir(exist_ok=True)
+        
         logger.add(
             "logs/lean_assistant.log",
             level="DEBUG",
@@ -52,54 +57,88 @@ class LeanApp:
             "✅ 100% Local y Privado\n"
             "🎤 Reconoce tu voz automáticamente\n" 
             "💬 Sugerencias AEIOU contextuales\n"
-            "⚡ Sin GPU requerida",
+            "⚡ Sin GPU requerida\n"
+            "🗄️ Base de conocimiento RAG local",
             border_style="blue"
         ))
     
     def check_prerequisites(self) -> bool:
         """Verifica prerrequisitos del sistema"""
+        console.print("\n[cyan]🔍 Verificando prerrequisitos...[/cyan]")
+        
+        all_good = True
         
         # 1. Verificar perfil de voz
         voice_profile_path = Path("data/user_voice_profile.pkl")
         if not voice_profile_path.exists():
-            console.print("[yellow]⚠️ Perfil de voz no encontrado[/yellow]")
-            
-            create_profile = Prompt.ask(
-                "¿Quieres crear tu perfil de voz ahora?",
-                choices=["y", "n"],
-                default="y"
-            )
-            
-            if create_profile == "y":
-                console.print("[cyan]📝 Ejecuta: python scripts/setup_voice_profile.py[/cyan]")
-                return False
-            else:
-                console.print("[red]❌ Perfil de voz requerido para funcionar[/red]")
-                return False
+            console.print("[red]❌ Perfil de voz no encontrado[/red]")
+            console.print("[cyan]💡 Ejecuta: python scripts/setup_voice_profile.py[/cyan]")
+            all_good = False
+        else:
+            console.print("[green]✅ Perfil de voz disponible[/green]")
         
-        # 2. Verificar Ollama
+        # 2. Verificar Ollama y modelo
         import subprocess
         try:
             result = subprocess.run(["ollama", "list"], 
                                   capture_output=True, text=True, timeout=5)
             if "qwen2.5:0.5b" not in result.stdout:
-                console.print("[yellow]⚠️ Modelo qwen2.5:0.5b no encontrado[/yellow]")
-                console.print("[cyan]📝 Ejecuta: ollama pull qwen2.5:0.5b[/cyan]")
-                return False
+                console.print("[red]❌ Modelo qwen2.5:0.5b no encontrado[/red]")
+                console.print("[cyan]💡 Ejecuta: ollama pull qwen2.5:0.5b[/cyan]")
+                all_good = False
+            else:
+                console.print("[green]✅ Modelo qwen2.5:0.5b disponible[/green]")
+                
         except (subprocess.TimeoutExpired, FileNotFoundError):
-            console.print("[yellow]⚠️ Ollama no está disponible[/yellow]")
-            console.print("[cyan]📝 Instala Ollama desde: https://ollama.ai[/cyan]")
-            return False
+            console.print("[red]❌ Ollama no está disponible[/red]")
+            console.print("[cyan]💡 Instala Ollama desde: https://ollama.ai[/cyan]")
+            all_good = False
         
         # 3. Verificar ChromaDB (knowledge base)
         chroma_path = Path("data/chroma_db")
         if not chroma_path.exists():
-            console.print("[yellow]⚠️ Base de conocimiento no inicializada[/yellow]")
-            console.print("[cyan]📝 Ejecuta: python scripts/setup_knowledge_base.py[/cyan]")
-            return False
+            console.print("[red]❌ Base de conocimiento no inicializada[/red]")
+            console.print("[cyan]💡 Ejecuta: python scripts/setup_knowledge_base.py[/cyan]")
+            all_good = False
+        else:
+            console.print("[green]✅ Base de conocimiento disponible[/green]")
         
-        console.print("[green]✅ Todos los prerrequisitos están listos[/green]")
-        return True
+        # 4. Verificar dependencias críticas
+        try:
+            import whisper
+            console.print("[green]✅ Whisper disponible[/green]")
+        except ImportError:
+            console.print("[red]❌ Whisper no instalado[/red]")
+            console.print("[cyan]💡 Ejecuta: pip install openai-whisper[/cyan]")
+            all_good = False
+        
+        try:
+            import chromadb
+            console.print("[green]✅ ChromaDB disponible[/green]")
+        except ImportError:
+            console.print("[red]❌ ChromaDB no instalado[/red]")
+            console.print("[cyan]💡 Ejecuta: pip install chromadb[/cyan]")
+            all_good = False
+        
+        # 5. Verificar audio
+        try:
+            import sounddevice as sd
+            devices = sd.query_devices()
+            input_devices = [d for d in devices if d['max_input_channels'] > 0]
+            if input_devices:
+                console.print(f"[green]✅ {len(input_devices)} dispositivos de audio[/green]")
+            else:
+                console.print("[yellow]⚠️ No se encontraron dispositivos de entrada[/yellow]")
+        except Exception as e:
+            console.print(f"[yellow]⚠️ Error verificando audio: {e}[/yellow]")
+        
+        if all_good:
+            console.print("[green]✅ Todos los prerrequisitos están listos[/green]")
+        else:
+            console.print("\n[yellow]💡 Instalación automática disponible:[/yellow]")
+            console.print("[bold]python scripts/install_lean.py[/bold]")
+        
+        return all_good
     
     def setup_signal_handlers(self):
         """Configura manejadores de señales para shutdown graceful"""
@@ -119,8 +158,12 @@ class LeanApp:
         
         # Verificar prerrequisitos
         if not self.check_prerequisites():
-            console.print("\n[red]❌ No se puede continuar sin los prerrequisitos[/red]")
-            return 1
+            console.print("\n[yellow]⚠️ Algunos prerrequisitos faltan[/yellow]")
+            
+            if not Prompt.ask("¿Continuar de todas formas?", choices=["y", "n"], default="n") == "y":
+                console.print("\n[cyan]Para instalación automática, ejecuta:[/cyan]")
+                console.print("[bold]python scripts/install_lean.py[/bold]")
+                return 1
         
         # Configurar señales
         self.setup_signal_handlers()
@@ -147,7 +190,10 @@ class LeanApp:
             # Iniciar asistente
             self.is_running = True
             console.print("\n[bold green]🎧 Iniciando escucha de audio del sistema...[/bold green]")
-            console.print("[dim]Presiona Ctrl+C para detener[/dim]\n")
+            console.print("[dim]Habla normalmente en tus reuniones. El asistente detectará tu voz y generará sugerencias AEIOU cuando detecte tensión o conflictos.[/dim]")
+            console.print("\n[yellow]Controles:[/yellow]")
+            console.print("  [cyan]Ctrl+C[/cyan] - Detener asistente")
+            console.print("\n" + "="*80 + "\n")
             
             await self.assistant.start_listening()
             
@@ -156,6 +202,10 @@ class LeanApp:
         except Exception as e:
             logger.error(f"❌ Error fatal: {e}")
             console.print(f"[bold red]❌ Error fatal:[/bold red] {e}")
+            console.print("\n[cyan]Para obtener ayuda:[/cyan]")
+            console.print("  1. Verifica los logs en: logs/lean_assistant.log")
+            console.print("  2. Ejecuta: python scripts/install_lean.py")
+            console.print("  3. Abre un issue en GitHub con los logs")
             return 1
         finally:
             if self.assistant:
@@ -167,12 +217,14 @@ class LeanApp:
     def show_configuration(self):
         """Muestra la configuración actual"""
         console.print("\n[bold cyan]📋 Configuración Lean:[/bold cyan]")
-        console.print(f"  🎤 Audio: 16kHz, buffers de 2s")
-        console.print(f"  👤 Identificación de voz: umbral 0.65")
-        console.print(f"  🧠 Modelo IA: qwen2.5:0.5b (sin GPU)")
-        console.print(f"  📚 RAG: ChromaDB local")
-        console.print(f"  ⚡ Latencia objetivo: <6s por sugerencia")
-        console.print(f"  💬 Framework: AEIOU para comunicación no-violenta")
+        console.print("  🎤 Audio: Captura de audio del sistema (16kHz)")
+        console.print("  👤 Identificación: Diferenciación automática de tu voz") 
+        console.print("  🗣️ STT: Whisper base local (sin internet)")
+        console.print("  🧠 IA: qwen2.5:0.5b (316MB, sin GPU)")
+        console.print("  📚 RAG: ChromaDB local con ejemplos AEIOU")
+        console.print("  ⚡ Latencia: <6s por sugerencia")
+        console.print("  💬 Framework: AEIOU para comunicación no-violenta")
+        console.print("  🔒 Privacidad: 100% local, sin datos en la nube")
 
 
 def main():
