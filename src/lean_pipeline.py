@@ -263,4 +263,57 @@ class LeanMeetingAssistant:
         self.conversation_buffer.append({
             "text": text,
             "speaker": speaker_type,
-            
+            "timestamp": time.time()
+        })
+        
+        # Limitar tamaño del buffer
+        if len(self.conversation_buffer) > self.max_buffer_size:
+            self.conversation_buffer = self.conversation_buffer[-self.max_buffer_size:]
+    
+    def _add_context_marker(self, context_type: str):
+        """Agrega marcadores de contexto sin transcripción completa"""
+        self.conversation_buffer.append({
+            "text": f"[{context_type}]",
+            "speaker": "system",
+            "timestamp": time.time()
+        })
+    
+    async def stop(self):
+        """Detiene el asistente y limpia recursos"""
+        self.is_running = False
+        
+        if self.audio_capture:
+            await self.audio_capture.stop()
+        
+        logger.info("🛑 Asistente detenido")
+
+
+# Factory function para configuración rápida
+def create_lean_assistant(user_profile_path: str = "data/user_voice_profile.pkl") -> LeanMeetingAssistant:
+    """Crea asistente con configuración optimizada para desarrollo lean"""
+    
+    config = ProcessingConfig(
+        # Configuración balanceada para desarrollo
+        sample_rate=16000,
+        buffer_duration=2.0,
+        voice_threshold=0.65,  # Un poco más permisivo para desarrollo
+        model_name="qwen2.5:0.5b",
+        max_context_length=1024,  # Reducido para velocidad
+        temperature=0.2,
+        max_rag_results=2,  # Menos resultados = más rápido
+        similarity_threshold=0.7,
+        processing_timeout=5.0,
+        min_suggestion_interval=8.0
+    )
+    
+    return LeanMeetingAssistant(config, user_profile_path)
+
+
+if __name__ == "__main__":
+    """Prueba rápida del pipeline lean"""
+    
+    async def main():
+        assistant = create_lean_assistant()
+        await assistant.start_listening()
+    
+    asyncio.run(main())
