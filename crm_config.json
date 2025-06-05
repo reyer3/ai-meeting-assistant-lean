@@ -1,0 +1,108 @@
+{
+  "crms": {
+    "totals_production": {
+      "enabled": false,
+      "type": "totals",
+      "primary": true,
+      "api_base_url": "https://api.totals.com/v2",
+      "username": "your_username",
+      "password": "your_password",
+      "client_id": "your_client_id",
+      "timeout": 30,
+      "retry_attempts": 3
+    },
+    "gecco_production": {
+      "enabled": false,
+      "type": "gecco",
+      "primary": false,
+      "database": {
+        "driver": "ODBC Driver 17 for SQL Server",
+        "server": "your-gecco-server",
+        "database": "GECCO_DB",
+        "username": "your_db_user",
+        "password": "your_db_password",
+        "port": 1433,
+        "timeout": 30
+      }
+    },
+    "custom_crm": {
+      "enabled": true,
+      "type": "generic_rest",
+      "primary": true,
+      "base_url": "https://api.your-crm.com/v1",
+      "auth_type": "bearer",
+      "token": "your-api-token-here",
+      "endpoints": {
+        "get_account": "/debtors/{debtor_id}",
+        "update_call": "/call-logs",
+        "get_queue": "/agents/{agent_id}/work-queue",
+        "update_status": "/debtors/{debtor_id}/status"
+      },
+      "field_mapping": {
+        "debtor_id": "customer_id",
+        "account_number": "account_ref",
+        "original_creditor": "creditor_name",
+        "current_balance": "outstanding_balance",
+        "original_balance": "original_debt",
+        "days_past_due": "days_delinquent",
+        "last_payment_date": "last_pmt_date",
+        "last_payment_amount": "last_pmt_amount",
+        "payment_history": "payment_records",
+        "contact_info": "contact_details",
+        "notes": "account_notes",
+        "status": "account_status",
+        "priority": "collection_priority",
+        "call_id": "log_id",
+        "agent_id": "collector_id",
+        "timestamp": "call_datetime",
+        "duration_seconds": "call_duration",
+        "outcome_code": "result_code",
+        "amount_promised": "promised_amount",
+        "notes": "call_notes"
+      },
+      "timeout": 30,
+      "retry_attempts": 3
+    },
+    "advantage_crm": {
+      "enabled": false,
+      "type": "generic_rest",
+      "primary": false,
+      "base_url": "https://api.advantagecollections.com/v2",
+      "auth_type": "api_key",
+      "api_key": "your-advantage-api-key",
+      "api_key_header": "X-Advantage-API-Key",
+      "endpoints": {
+        "get_account": "/accounts/{debtor_id}/details",
+        "update_call": "/activities/calls",
+        "get_queue": "/queues/agent/{agent_id}",
+        "update_status": "/accounts/{debtor_id}/status"
+      },
+      "field_mapping": {
+        "debtor_id": "debtor_number",
+        "account_number": "file_number",
+        "current_balance": "current_amount",
+        "days_past_due": "days_delinquent",
+        "status": "file_status"
+      }
+    }
+  },
+  "sync_settings": {
+    "auto_sync_enabled": true,
+    "sync_interval_minutes": 5,
+    "batch_size": 50,
+    "error_retry_delay_seconds": 30,
+    "max_sync_failures": 5
+  },
+  "compliance": {
+    "log_all_api_calls": true,
+    "encrypt_sensitive_data": true,
+    "audit_trail_enabled": true,
+    "data_retention_days": 2555
+  },
+  "performance": {
+    "connection_pool_size": 10,
+    "request_timeout_seconds": 30,
+    "max_retries": 3,
+    "cache_account_data_minutes": 5
+  }
+}
